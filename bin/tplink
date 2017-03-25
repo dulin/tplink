@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+define("ROOT_DIR", dirname(dirname(__FILE__)));
+require_once(ROOT_DIR .'/vendor/autoload.php');
+#require_once(ROOT_DIR .'/src/Router/Tplink.php');
+
+if(isset($argv[1])) {
+(new Router\Tplink())->setWlanName($argv[1])->main();
+} else {
+    exit('Missing wireless name!');
+}
+
+
+

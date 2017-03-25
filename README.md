@@ -5,6 +5,7 @@ Automatic TP-LINK TL-WR940N router provision, experiment with selenium and faceb
 ## Installation
 ```bash
 composer install
+wget http://selenium-release.storage.googleapis.com/3.3/selenium-server-standalone-3.3.1.jar
 ```
 ### Usage
 ```
@@ -12,6 +13,12 @@ There is no configuration, you have to edit main class located in ./src/Router/T
 ```
 
 #### Running
+
+> Before you run main script run selenium-server
+```
+java -jar selenium-server-standalone-3.3.1.jar 
+```
+> Script
 ```
 ./bin/tplink MY_NETWORK
 ``` 

@@ -1,0 +1,7 @@
+.idea
+vendor
+composer.lock
+
+# vim backup files
+*.un~
+.*.un~
