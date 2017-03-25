@@ -62,7 +62,7 @@ class Tplink
         $this->configureWLAN();
         $this->setWifiPassword($this->wifiPassword);
         $this->enableRemoteManagement();
-        $this->configureTimeSettings('0.uk.pool.nep.org');
+        $this->configureTimeSettings('0.uk.pool.ntp.org');
         $this->changePassword('admin', 'admin', 'admin', 'pa55w0rd');
         $this->login('admin', 'pa55w0rd');
         // rebooting to be sure config is saved
@@ -102,11 +102,9 @@ class Tplink
      */
     public function generatePassword($charLength = 12)
     {
-        // here is tp-link validation char, without space...
-        $tpLinkChar = "0123456789ABCDEFabcdefGHIJKLMNOPQRSTUVWXYZghijklmnopqrstuvwxyz`~!@#$^&*()-=_+[]{};:'\"|/?.,<>/%";
-        $char = "abcefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+        $char = "abcefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-";
 
-        return substr(str_shuffle($tpLinkChar), 0, $charLength);
+        return substr(str_shuffle($char), 0, $charLength);
     }
 
     /**
