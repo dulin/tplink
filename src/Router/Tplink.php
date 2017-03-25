@@ -9,7 +9,7 @@ use Facebook\WebDriver\WebDriverBy;
 
 class Tplink
 {
-    const DEBUG = true;
+    const DEBUG = false;
     const BROWSER = 'firefox';
     const MODEL = 'TL-WR940N';
     /**
@@ -18,7 +18,7 @@ class Tplink
     protected $webDriver;
     protected $url = 'http://192.168.0.1';
     protected $wifiName = 'BLEBLE';
-
+    protected $wifiPassword = 'password';
     private $mainFrameId = null;
     private $bottomLeftFrameId = null;
 
@@ -53,16 +53,26 @@ class Tplink
         $this->webDriver->get($this->url);
         $this->login();
 
+        // generating password
+        $this->wifiPassword = $this->generatePassword(15);
+
 
         $this->disableWPS();
         $this->configureWAN();
         $this->configureWLAN();
+        $this->setWifiPassword($this->wifiPassword);
         $this->enableRemoteManagement();
         $this->configureTimeSettings('0.uk.pool.nep.org');
         $this->changePassword('admin', 'admin', 'admin', 'pa55w0rd');
         $this->login('admin', 'pa55w0rd');
         // rebooting to be sure config is saved
         $this->reboot();
+
+        printf(
+            "\033[0;31mResult:\033[0m: \nWireless name: %s\nWireless Password: %s\n",
+            $this->wifiName,
+            $this->wifiPassword
+        );
 
     }
 
@@ -81,6 +91,22 @@ class Tplink
         sleep(2);
         $this->mainFrameId = $this->webDriver->findElement(WebDriverBy::id('mainFrame'));
         $this->bottomLeftFrameId = $this->webDriver->findElement(WebDriverBy::id('bottomLeftFrame'));
+    }
+
+    /**
+     * Generate random password.
+     *
+     * @param int $char
+     *
+     * @return string
+     */
+    public function generatePassword($charLength = 12)
+    {
+        // here is tp-link validation char, without space...
+        $tpLinkChar = "0123456789ABCDEFabcdefGHIJKLMNOPQRSTUVWXYZghijklmnopqrstuvwxyz`~!@#$^&*()-=_+[]{};:'\"|/?.,<>/%";
+        $char = "abcefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+
+        return substr(str_shuffle($tpLinkChar), 0, $charLength);
     }
 
     /**
@@ -141,7 +167,7 @@ class Tplink
     public function debug($name = '', $status = '')
     {
         if (self::DEBUG) {
-            printf("\033[0;31mDebugging:\033[0m' %s part: %s\n", $name, $status);
+            printf("\033[0;31mDebug:\033[0m %s part: %s\n", $name, $status);
         }
     }
 
@@ -199,6 +225,27 @@ class Tplink
     }
 
     /**
+     * @param string $password
+     */
+    public function setWifiPassword($password = '')
+    {
+        $this->debug(__FUNCTION__, 'start');
+        $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
+        $menu->findElement(WebDriverBy::linkText('Wireless'))->click();
+        $menu->findElement(WebDriverBy::linkText('- Wireless Security'))->click();
+        $this->webDriver->switchTo()->defaultContent();
+        $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        // wait for page load...
+        sleep(1);
+        $centerFrame->findElement(WebDriverBy::name('pskSecret'))->clear()->sendKeys($password);
+        $centerFrame->findElement(WebDriverBy::name('Save'))->click();
+        $this->webDriver->switchTo()->defaultContent();
+        // give some time for save...
+        sleep(2);
+        $this->debug(__FUNCTION__, 'done');
+    }
+
+    /**
      * Enable Remote Management
      */
     public function enableRemoteManagement()
@@ -221,7 +268,9 @@ class Tplink
     }
 
     /**
-     * Configure Time settings
+     * Configure Time settings.
+     *
+     * @param string $ntp
      */
     public function configureTimeSettings($ntp = '')
     {
