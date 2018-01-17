@@ -1,48 +1,31 @@
 <?php
 
-namespace Router;
+namespace Router\Tplink;
 
 use Facebook\WebDriver\Exception\ElementNotVisibleException;
-use Facebook\WebDriver\Remote\RemoteWebDriver;
-use Facebook\WebDriver\Remote\WebDriverCapabilityType;
 use Facebook\WebDriver\WebDriverBy;
+use Router\Router;
 
-class Tplink
+class WR940N extends Router
 {
-    const DEBUG = false;
-    const BROWSER = 'firefox';
     const MODEL = 'TL-WR940N';
-    /**
-     * @var RemoteWebDriver
-     */
-    protected $webDriver;
-    protected $url = 'http://192.168.0.1';
-    protected $wifiName = 'BLEBLE';
-    protected $wifiPassword = 'password';
+    protected $wifiPassword = '';
+    private $config;
     private $mainFrameId = null;
     private $bottomLeftFrameId = null;
 
     /**
-     * Tplink constructor.
-     */
-    public function __construct()
-    {
-        $capabilities = array(WebDriverCapabilityType::BROWSER_NAME => self::BROWSER);
-        $this->webDriver = RemoteWebDriver::create('http://localhost:4444/wd/hub', $capabilities);
-    }
-
-    /**
-     * Setting wifi name
+     * WR940N constructor.
      *
-     * @param $wifiName
+     * @param $config
      *
-     * @return $this
+     * @throws \Facebook\WebDriver\Exception\WebDriverException
      */
-    public function setWlanName($wifiName)
+    public function __construct($config)
     {
-        $this->wifiName = $wifiName;
-
-        return $this;
+        $this->config = $config;
+        $this->debugging = $config['debug'];
+        $this->initWebdriver();
     }
 
     /**
@@ -50,30 +33,37 @@ class Tplink
      */
     public function main()
     {
-        $this->webDriver->get($this->url);
+        $this->webDriver->get(self::DEFAULT_URL);
         $this->login();
 
-        // generating password
-        $this->wifiPassword = $this->generatePassword(15);
-
+        if (!$this->config['use_default_password']) {
+            // generate wifi password
+            $this->wifiPassword = $this->generatePassword(15);
+        }
 
         $this->disableWPS();
         $this->configureWAN();
         $this->configureWLAN();
-        $this->setWifiPassword($this->wifiPassword);
-        $this->enableRemoteManagement();
-        $this->configureTimeSettings('0.uk.pool.ntp.org');
-        $this->changePassword('admin', 'admin', 'admin', 'pa55w0rd');
-        $this->login('admin', 'pa55w0rd');
+        if (!$this->config['use_default_password']) {
+            $this->setWifiPassword($this->wifiPassword);
+        }
+        if($this->config['remote_management_enable']) {
+            $this->enableRemoteManagement();
+        }
+        $this->configureTimeSettings($this->config['ntp_server']);
+        $this->changePassword('admin', 'admin', 'admin', $this->config['admin_password']);
+        $this->login('admin', $this->config['admin_password']);
         // rebooting to be sure config is saved
         $this->reboot();
 
-        printf(
-            "\033[0;31mResult:\033[0m: \nWireless name: %s\nWireless Password: %s\n",
-            $this->wifiName,
-            $this->wifiPassword
-        );
 
+        if (!$this->config['use_default_password']) {
+            printf(
+                "\033[0;31mResult:\033[0m: \nWireless name: %s\nWireless Password: %s\n",
+                $this->wifiName,
+                $this->wifiPassword
+            );
+        }
     }
 
     /**
@@ -82,29 +72,15 @@ class Tplink
      * @param string $login
      * @param string $password
      */
-    public function login($login = 'admin', $password = 'admin')
+    public function login($login, $password)
     {
         $this->webDriver->findElement(WebDriverBy::id('userName'))->clear()->sendKeys($login);
         $this->webDriver->findElement(WebDriverBy::id('pcPassword'))->clear()->sendKeys($password);
         $this->webDriver->findElement(WebDriverBy::id('loginBtn'))->click();
 
-        sleep(2);
+
         $this->mainFrameId = $this->webDriver->findElement(WebDriverBy::id('mainFrame'));
         $this->bottomLeftFrameId = $this->webDriver->findElement(WebDriverBy::id('bottomLeftFrame'));
-    }
-
-    /**
-     * Generate random password.
-     *
-     * @param int $char
-     *
-     * @return string
-     */
-    public function generatePassword($charLength = 12)
-    {
-        $char = "abcefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-";
-
-        return substr(str_shuffle($char), 0, $charLength);
     }
 
     /**
@@ -146,11 +122,11 @@ class Tplink
         }
         // wait for load page...
         sleep(1);
-        $centerFrame->findElement(WebDriverBy::name('ip'))->clear()->sendKeys('192.168.3.2');
-        $centerFrame->findElement(WebDriverBy::name('mask'))->clear()->sendKeys('255.255.255.0');
-        $centerFrame->findElement(WebDriverBy::name('gateway'))->clear()->sendKeys('192.168.3.1');
-        $centerFrame->findElement(WebDriverBy::name('dnsserver'))->clear()->sendKeys('8.8.8.8');
-        $centerFrame->findElement(WebDriverBy::name('dnsserver2'))->clear()->sendKeys('8.8.4.4');
+        $centerFrame->findElement(WebDriverBy::name('ip'))->clear()->sendKeys($this->config['wan_ip_address']);
+        $centerFrame->findElement(WebDriverBy::name('mask'))->clear()->sendKeys($this->config['wan_netmask']);
+        $centerFrame->findElement(WebDriverBy::name('gateway'))->clear()->sendKeys($this->config['wan_gateway']);
+        $centerFrame->findElement(WebDriverBy::name('dnsserver'))->clear()->sendKeys($this->config['wan_dns1']);
+        $centerFrame->findElement(WebDriverBy::name('dnsserver2'))->clear()->sendKeys($this->config['wan_dns2']);
         $centerFrame->findElement(WebDriverBy::name('Save'))->click();
         $this->webDriver->switchTo()->defaultContent();
         // give some time for save...
@@ -158,16 +134,6 @@ class Tplink
         $this->debug(__FUNCTION__, 'done');
     }
 
-    /**
-     * @param string $name
-     * @param string $status
-     */
-    public function debug($name = '', $status = '')
-    {
-        if (self::DEBUG) {
-            printf("\033[0;31mDebug:\033[0m %s part: %s\n", $name, $status);
-        }
-    }
 
     /**
      * Configure WLAN.
@@ -254,10 +220,13 @@ class Tplink
         $menu->findElement(WebDriverBy::linkText('- Remote Management'))->click();
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
-        // wait for page load...
-        sleep(1);
-        $centerFrame->findElement(WebDriverBy::name('port'))->clear()->sendKeys('8080');
-        $centerFrame->findElement(WebDriverBy::name('ip'))->clear()->sendKeys('255.255.255.255');
+
+        $centerFrame->findElement(WebDriverBy::name('port'))->clear()->sendKeys(
+            $this->config['remote_management_port']
+        );
+        $centerFrame->findElement(WebDriverBy::name('ip'))->clear()->sendKeys(
+            $this->config['remote_management_ip']
+        );
         $centerFrame->findElement(WebDriverBy::name('Save'))->click();
         $this->webDriver->switchTo()->defaultContent();
         // give some time for save...

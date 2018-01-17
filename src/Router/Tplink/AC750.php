@@ -15,6 +15,7 @@ class AC750 extends Router
      * @var RemoteWebDriver
      */
     protected $webDriver;
+    protected $wifiPassword = '';
     private $config;
     private $mainFrameId = null;
     private $bottomLeftFrameId = null;
@@ -39,20 +40,23 @@ class AC750 extends Router
     public function main()
     {
         $this->webDriver->get(self::DEFAULT_URL);
-        $this->login();
+        if (!$this->config['use_default_password']) {
+            // generate wifi password
+            $this->wifiPassword = $this->generatePassword(15);
+        }
 
+        $this->login();
 
         $this->configureWAN();
         $this->configureWLAN24();
-        sleep(7);
-        $this->disableWPS('menu_wlqss');
-        sleep(5);
+        if ($this->config['disable_wps']) {
+            $this->disableWPS('menu_wlqss');
+            $this->disableWPS('menu_wlqss5g');
+        }
         $this->configureWLAN5();
-        sleep(5);
-        $this->disableWPS('menu_wlqss5g');
-        sleep(5);
-        $this->enableRemoteManagement();
-        sleep(2);
+        if ($this->config['remote_management_enable']) {
+            $this->enableRemoteManagement();
+        }
         $this->configureTimeSettings($this->config['ntp_server']);
         $this->changePassword('admin', 'admin', 'admin', $this->config['admin_password']);
         $this->login('admin', $this->config['admin_password']);
@@ -300,10 +304,12 @@ class AC750 extends Router
         $menu->findElement(WebDriverBy::linkText('- Remote Management'))->click();
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
-        // wait for page load...
-        sleep(2);
-        $centerFrame->findElement(WebDriverBy::id('r_http_port'))->clear()->sendKeys('65532');
-        $centerFrame->findElement(WebDriverBy::id('r_host'))->clear()->sendKeys('255.255.255.255');
+        $centerFrame->findElement(WebDriverBy::id('r_http_port'))->clear()->sendKeys(
+            $this->config['remote_management_port']
+        );
+        $centerFrame->findElement(WebDriverBy::id('r_host'))->clear()->sendKeys(
+            $this->config['remote_management_ip']
+        );
         $centerFrame->findElement(
             WebDriverBy::cssSelector('input[value="Save"]')
         )->click();
