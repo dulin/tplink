@@ -6,6 +6,7 @@ use Facebook\WebDriver\Exception\ElementNotVisibleException;
 use Facebook\WebDriver\Exception\NoAlertOpenException;
 use Facebook\WebDriver\Exception\NoSuchElementException;
 use Facebook\WebDriver\WebDriverBy;
+use Facebook\WebDriver\WebDriverExpectedCondition;
 use Router\Router;
 
 class AC750 extends Router
@@ -40,7 +41,7 @@ class AC750 extends Router
     public function main()
     {
         $this->webDriver->get(self::DEFAULT_URL);
-        if (!$this->config['use_default_password']) {
+        if (!$this->config['use_default_wifi_password']) {
             // generate wifi password
             $this->wifiPassword = $this->generatePassword(15);
         }
@@ -51,38 +52,51 @@ class AC750 extends Router
         $this->configureWLAN24();
         if ($this->config['disable_wps']) {
             $this->disableWPS('menu_wlqss');
-            $this->disableWPS('menu_wlqss5g');
+        }
+        if (!$this->config['use_default_wifi_password']) {
+            $this->setWifiPassword('menu_wlsec', $this->wifiPassword);
         }
         $this->configureWLAN5();
+        if ($this->config['disable_wps']) {
+            $this->disableWPS('menu_wlqss5g'); // 5g
+        }
+        if (!$this->config['use_default_wifi_password']) {
+            $this->setWifiPassword('menu_wlsec5g', $this->wifiPassword); // 5g
+        }
         if ($this->config['remote_management_enable']) {
             $this->enableRemoteManagement();
         }
         $this->configureTimeSettings($this->config['ntp_server']);
         $this->changePassword('admin', 'admin', 'admin', $this->config['admin_password']);
         $this->login('admin', $this->config['admin_password']);
-        sleep(3);
         // rebooting to be sure config is saved
         $this->reboot();
-
-        sleep(3);
         $this->webDriver->close();
+
+        if (!$this->config['use_default_wifi_password']) {
+            printf(
+                "\033[0;31mResult:\033[0m: \nWireless name 2.4Ghz: %s\nWireless name 5G: %s\nWireless Password: %s\n",
+                $this->wifiName,
+                $this->wifiName . "_5G",
+                $this->wifiPassword
+            );
+        }
     }
 
     /**
-     * Logging into the router.
+     * Login.
      *
      * @param string $login
      * @param string $password
      */
     public function login($login = 'admin', $password = 'admin')
     {
-        sleep(2);
+        $this->webDriver->wait(10, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('userName'))
+        );
         $this->webDriver->findElement(WebDriverBy::id('userName'))->clear()->sendKeys($login);
         $this->webDriver->findElement(WebDriverBy::id('pcPassword'))->clear()->sendKeys($password);
         $this->webDriver->findElement(WebDriverBy::id('loginBtn'))->click();
-
-        sleep(2);
-
         try {
             $incorrectPassword = $this->webDriver->findElement(WebDriverBy::id('tip'));
             if ($incorrectPassword->getText() === 'The username or password is incorrect, please input again.') {
@@ -104,7 +118,7 @@ class AC750 extends Router
      */
     public function debug($name = '', $status = '')
     {
-        if (self::DEBUG) {
+        if ($this->debugging) {
             printf("\033[0;31mDebugging:\033[0m' %s part: %s\n", $name, $status);
         }
     }
@@ -117,17 +131,16 @@ class AC750 extends Router
         $this->debug(__FUNCTION__, 'start');
         $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
         $menu->findElement(WebDriverBy::linkText('Network'))->click();
-        sleep(1);
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
-
+        $this->webDriver->wait(10, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('link_type'))
+        );
         $select = $centerFrame->findElement(WebDriverBy::id('link_type'));
         $staticIp = $select->findElement(WebDriverBy::id('staticIp'));
         if (!$staticIp->isSelected()) {
             $staticIp->click();
         }
-        // wait for load page...
-        sleep(1);
         $centerFrame->findElement(WebDriverBy::id('ip_address'))->clear()->sendKeys($this->config['wan_ip_address']);
         $centerFrame->findElement(WebDriverBy::id('netmask'))->clear()->sendKeys($this->config['wan_netmask']);
         $centerFrame->findElement(WebDriverBy::id('ip_gateway'))->clear()->sendKeys($this->config['wan_gateway']);
@@ -135,8 +148,27 @@ class AC750 extends Router
         $centerFrame->findElement(WebDriverBy::id('second_dns'))->clear()->sendKeys($this->config['wan_dns2']);
         $centerFrame->findElement(WebDriverBy::id('saveBtn'))->click();
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(2);
+        $this->debug(__FUNCTION__, 'done');
+    }
+
+    /**
+     * @param string $password
+     */
+    public function setWifiPassword($loc, $password = '')
+    {
+        $this->debug(__FUNCTION__, 'start');
+        $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
+        $menu->findElement(WebDriverBy::id($loc))->click();
+        $this->webDriver->switchTo()->defaultContent();
+        $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(20, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('pskSecret'))
+        );
+        $centerFrame->findElement(WebDriverBy::id('pskSecret'))->clear()->sendKeys($password);
+        $centerFrame->findElement(
+            WebDriverBy::cssSelector('input[value="Save"]')
+        )->click();
+        $this->webDriver->switchTo()->defaultContent();
         $this->debug(__FUNCTION__, 'done');
     }
 
@@ -148,9 +180,11 @@ class AC750 extends Router
         $this->debug(__FUNCTION__, 'start');
         $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
         $menu->findElement(WebDriverBy::linkText('Wireless 2.4GHz'))->click();
-        sleep(1);
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(20, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('ssid'))
+        );
         $centerFrame->findElement(WebDriverBy::id('ssid'))->clear()->sendKeys($this->wifiName);
 
         $channelWidth = $centerFrame->findElement(
@@ -163,7 +197,6 @@ class AC750 extends Router
 
         $channels = ['3', '7', '11'];
         $selected = array_rand($channels, 1);
-        usleep(500000);
         $channel = $centerFrame->findElement(
             WebDriverBy::cssSelector('select[name="channel"] > option[value="'.$channels[$selected].'"]')
         );
@@ -189,8 +222,6 @@ class AC750 extends Router
         }
 
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(3);
         $this->debug(__FUNCTION__, 'done');
     }
 
@@ -199,12 +230,15 @@ class AC750 extends Router
      */
     public function disableWPS($loc)
     {
+        $this->debug(__FUNCTION__, ' '. $loc. ' - start');
         $wpaEnabled = false;
         $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
         $menu->findElement(WebDriverBy::id($loc))->click();
-        sleep(3);
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(20, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('addNew'))
+        );
 
         $isEnabled = $centerFrame->findElement(
             WebDriverBy::cssSelector('b[id="isQSSEn"] > span')
@@ -214,22 +248,6 @@ class AC750 extends Router
             $wpaEnabled = true;
         }
 
-
-        // Getting current WPS pin
-        /*
-                $elements = $centerFrame->findElement(WebDriverBy::id('t_cur_pin'));
-                foreach ($elements as $element) {
-            dump($element->getText());
-        }
-                die();
-        */
-        // Checking if WPA button is enabled
-        /*    try {
-                $wpaEnabled = $centerFrame->findElement(WebDriverBy::name('EnWps'))->isEnabled();
-            } catch(NoSuchElementException $e) {
-              dump($e);
-            }*/
-
         if ($wpaEnabled) {
             try {
                 $disableWPS = $centerFrame->findElement(WebDriverBy::id('qssSwitch'))->click();
@@ -237,8 +255,8 @@ class AC750 extends Router
                 printf('%s: Got exception possibly already disabled, error: %s', __FUNCTION__, $ex->getMessage());
             }
         }
-        sleep(2);
         $this->webDriver->switchTo()->defaultContent();
+        $this->debug(__FUNCTION__, ' '. $loc. ' - done');
     }
 
     /**
@@ -249,9 +267,11 @@ class AC750 extends Router
         $this->debug(__FUNCTION__, 'start');
         $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
         $menu->findElement(WebDriverBy::linkText('Wireless 5GHz'))->click();
-        sleep(1);
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(20, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('ssid'))
+        );
         $centerFrame->findElement(WebDriverBy::id('ssid'))->clear()->sendKeys($this->wifiName."_5G");
 
         $channelWidth = $centerFrame->findElement(
@@ -287,8 +307,6 @@ class AC750 extends Router
         }
 
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(3);
         $this->debug(__FUNCTION__, 'done');
     }
 
@@ -304,6 +322,9 @@ class AC750 extends Router
         $menu->findElement(WebDriverBy::linkText('- Remote Management'))->click();
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(10, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('r_http_port'))
+        );
         $centerFrame->findElement(WebDriverBy::id('r_http_port'))->clear()->sendKeys(
             $this->config['remote_management_port']
         );
@@ -314,22 +335,24 @@ class AC750 extends Router
             WebDriverBy::cssSelector('input[value="Save"]')
         )->click();
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(2);
         $this->debug(__FUNCTION__, 'done');
     }
 
     /**
      * Configure Time settings.
+     *
+     * @param $ntp_server
      */
     public function configureTimeSettings($ntp_server)
     {
         $this->debug(__FUNCTION__, 'start');
         $menu = $this->webDriver->switchTo()->frame($this->bottomLeftFrameId);
         $menu->findElement(WebDriverBy::linkText('System Tools'))->click();
-        usleep(500000);
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
+        $this->webDriver->wait(10, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('ntpA'))
+        );
         $select = $centerFrame->findElement(
             WebDriverBy::cssSelector('select[id="timezone"] > option[value="+00:00"]')
         );
@@ -342,8 +365,6 @@ class AC750 extends Router
             WebDriverBy::cssSelector('input[value="Save"]')
         )->click();
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(3);
         $this->debug(__FUNCTION__, 'done');
     }
 
@@ -363,8 +384,9 @@ class AC750 extends Router
         $menu->findElement(WebDriverBy::linkText('- Password'))->click();
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
-        // wait for page load...
-        sleep(1);
+        $this->webDriver->wait(15, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::id('curName'))
+        );
         $centerFrame->findElement(WebDriverBy::id('curName'))->clear()->sendKeys($login);
         $centerFrame->findElement(WebDriverBy::id('curPwd'))->clear()->sendKeys($password);
         $centerFrame->findElement(WebDriverBy::id('newName'))->clear()->sendKeys($newLogin);
@@ -374,8 +396,6 @@ class AC750 extends Router
             WebDriverBy::cssSelector('input[value="Save"]')
         )->click();
         $this->webDriver->switchTo()->defaultContent();
-        // give some time for save...
-        sleep(2);
         $this->debug(__FUNCTION__, 'done');
     }
 
@@ -390,12 +410,16 @@ class AC750 extends Router
         $menu->findElement(WebDriverBy::linkText('- Reboot'))->click();
         $this->webDriver->switchTo()->defaultContent();
         $centerFrame = $this->webDriver->switchTo()->frame($this->mainFrameId);
-        // wait for page load...
-        sleep(1);
+        $this->webDriver->wait(10, 1000)->until(
+            WebDriverExpectedCondition::visibilityOfElementLocated(
+                WebDriverBy::cssSelector('input[value="Reboot"]')
+            )
+        );
         $centerFrame->findElement(
             WebDriverBy::cssSelector('input[value="Reboot"]')
         )->click();
         $this->webDriver->switchTo()->alert()->accept();
+        sleep(2);
         $this->debug(__FUNCTION__, 'done');
     }
 }
